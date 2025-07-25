@@ -1,196 +1,181 @@
--- Infinite Road Trip Remote AI Caller (KRNL - Fixed)
+-- Infinite Road Trip Remote AI Caller + Preview (KRNL)
+
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
-local selectedRemote = nil -- ⛏️ FIXED: Now using a real Lua variable
-
--- GUI: API Key Input
+-- === API Key GUI ===
 local function getApiKey()
     local gui = Instance.new("ScreenGui", game.CoreGui)
-    gui.Name = "ApiKeyGui"
+    gui.Name = "APIKeyPrompt"
 
     local frame = Instance.new("Frame", gui)
     frame.Size = UDim2.new(0, 400, 0, 150)
     frame.Position = UDim2.new(0.5, -200, 0.5, -75)
-    frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-    frame.Active = true
-    frame.Draggable = true
+    frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
+    frame.Draggable, frame.Active = true, true
 
     local label = Instance.new("TextLabel", frame)
-    label.Size = UDim2.new(1, 0, 0, 40)
+    label.Text = "Enter your OpenAI API Key:"
+    label.Size = UDim2.new(1, 0, 0, 30)
     label.Position = UDim2.new(0, 0, 0, 10)
     label.BackgroundTransparency = 1
-    label.Text = "Enter your OpenAI API key:"
-    label.TextColor3 = Color3.new(1, 1, 1)
+    label.TextColor3 = Color3.new(1,1,1)
     label.Font = Enum.Font.SourceSansBold
     label.TextSize = 20
 
-    local textBox = Instance.new("TextBox", frame)
-    textBox.Size = UDim2.new(1, -20, 0, 40)
-    textBox.Position = UDim2.new(0, 10, 0, 60)
-    textBox.PlaceholderText = "sk-..."
-    textBox.TextColor3 = Color3.new(1, 1, 1)
-    textBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-    textBox.Font = Enum.Font.SourceSans
-    textBox.TextSize = 18
+    local textbox = Instance.new("TextBox", frame)
+    textbox.Size = UDim2.new(1, -20, 0, 30)
+    textbox.Position = UDim2.new(0, 10, 0, 50)
+    textbox.PlaceholderText = "sk-..."
+    textbox.TextColor3 = Color3.new(1,1,1)
+    textbox.BackgroundColor3 = Color3.fromRGB(40,40,40)
+    textbox.TextSize = 18
+    textbox.Text = ""
 
-    local submit = Instance.new("TextButton", frame)
-    submit.Size = UDim2.new(0, 100, 0, 30)
-    submit.Position = UDim2.new(1, -110, 1, -40)
-    submit.Text = "Submit"
-    submit.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-    submit.TextColor3 = Color3.new(1, 1, 1)
-    submit.Font = Enum.Font.SourceSansBold
-    submit.TextSize = 18
+    local button = Instance.new("TextButton", frame)
+    button.Text = "Submit"
+    button.Size = UDim2.new(0, 100, 0, 30)
+    button.Position = UDim2.new(1, -110, 1, -40)
+    button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    button.TextColor3 = Color3.new(1,1,1)
 
-    local enteredKey
-    local waiting = true
+    local key, done = nil, false
 
-    submit.MouseButton1Click:Connect(function()
-        local key = textBox.Text
-        if key and #key > 10 then
-            enteredKey = key
-            waiting = false
+    button.MouseButton1Click:Connect(function()
+        if textbox.Text:match("^sk%-") then
+            key = textbox.Text
+            done = true
             gui:Destroy()
         else
-            textBox.Text = ""
-            textBox.PlaceholderText = "Invalid key, try again."
+            textbox.Text = ""
+            textbox.PlaceholderText = "Invalid key, try again"
         end
     end)
 
-    while waiting do
-        RunService.Heartbeat:Wait()
-    end
-
-    return enteredKey
+    while not done do RunService.Heartbeat:Wait() end
+    return key
 end
 
 local openAIKey = getApiKey()
 
--- GUI: Main Panel
+-- === Variables ===
+local selectedRemote = nil
+local remotes = {}
+
+-- === Main GUI ===
 local gui = Instance.new("ScreenGui", game.CoreGui)
-gui.Name = "RemoteAI"
+gui.Name = "RemoteAIGui"
 
 local frame = Instance.new("Frame", gui)
-frame.Size = UDim2.new(0, 450, 0, 350)
-frame.Position = UDim2.new(0.5, -225, 0.5, -175)
-frame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-frame.Active = true
-frame.Draggable = true
+frame.Size = UDim2.new(0, 480, 0, 420)
+frame.Position = UDim2.new(0.5, -240, 0.5, -210)
+frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
+frame.Draggable, frame.Active = true, true
 
 local title = Instance.new("TextLabel", frame)
+title.Text = "🚐 Infinite Road Trip AI Remote Caller"
 title.Size = UDim2.new(1, 0, 0, 35)
-title.Text = "🚀 Infinite Road Trip Remote AI Caller"
-title.TextColor3 = Color3.new(1, 1, 1)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.new(1,1,1)
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 20
-title.BackgroundTransparency = 1
 
--- Remote Dropdown
+-- Remote List
 local dropdown = Instance.new("ScrollingFrame", frame)
+dropdown.Position = UDim2.new(0, 10, 0, 45)
 dropdown.Size = UDim2.new(1, -20, 0, 100)
-dropdown.Position = UDim2.new(0, 10, 0, 50)
-dropdown.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+dropdown.BackgroundColor3 = Color3.fromRGB(35,35,35)
 dropdown.ScrollBarThickness = 6
-dropdown.BorderSizePixel = 0
+local listLayout = Instance.new("UIListLayout", dropdown)
 
-local layout = Instance.new("UIListLayout", dropdown)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-
--- Prompt input
+-- Prompt Input
 local promptBox = Instance.new("TextBox", frame)
+promptBox.Position = UDim2.new(0, 10, 0, 155)
 promptBox.Size = UDim2.new(1, -20, 0, 60)
-promptBox.Position = UDim2.new(0, 10, 0, 160)
-promptBox.PlaceholderText = "ex: set speed to 999"
-promptBox.TextColor3 = Color3.new(1, 1, 1)
+promptBox.PlaceholderText = "Prompt (e.g. speed = 999)"
 promptBox.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-promptBox.Font = Enum.Font.SourceSans
+promptBox.TextColor3 = Color3.new(1,1,1)
 promptBox.TextSize = 16
 promptBox.TextWrapped = true
 promptBox.ClearTextOnFocus = false
 
--- Fire button
+-- Live Preview
+local previewLabel = Instance.new("TextLabel", frame)
+previewLabel.Position = UDim2.new(0, 10, 0, 225)
+previewLabel.Size = UDim2.new(1, -20, 0, 80)
+previewLabel.Text = "[Awaiting AI response...]"
+previewLabel.TextWrapped = true
+previewLabel.TextXAlignment = Enum.TextXAlignment.Left
+previewLabel.BackgroundTransparency = 1
+previewLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+previewLabel.Font = Enum.Font.Code
+previewLabel.TextSize = 14
+
+-- Fire Button
 local fireBtn = Instance.new("TextButton", frame)
+fireBtn.Position = UDim2.new(0, 10, 0, 320)
 fireBtn.Size = UDim2.new(1, -20, 0, 40)
-fireBtn.Position = UDim2.new(0, 10, 0, 240)
-fireBtn.Text = "🔥 Fire Remote with AI Args"
-fireBtn.TextColor3 = Color3.new(1, 1, 1)
-fireBtn.BackgroundColor3 = Color3.fromRGB(70, 120, 70)
+fireBtn.Text = "⚡ Fire Remote with AI Args"
+fireBtn.BackgroundColor3 = Color3.fromRGB(50, 100, 50)
+fireBtn.TextColor3 = Color3.new(1,1,1)
 fireBtn.Font = Enum.Font.SourceSansBold
-fireBtn.TextSize = 18
+fireBtn.TextSize = 20
 
--- Scan and fill remotes
-local function scanRemotes()
-    local remotes = {}
-    for _, obj in pairs(game:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            table.insert(remotes, obj)
-        end
+-- === Populate Remote List ===
+for _, obj in ipairs(game:GetDescendants()) do
+    if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+        table.insert(remotes, obj)
     end
-
-    for _, btn in pairs(dropdown:GetChildren()) do
-        if btn:IsA("TextButton") then btn:Destroy() end
-    end
-
-    for _, remote in ipairs(remotes) do
-        local btn = Instance.new("TextButton", dropdown)
-        btn.Size = UDim2.new(1, -10, 0, 25)
-        btn.Text = remote:GetFullName()
-        btn.TextColor3 = Color3.new(1, 1, 1)
-        btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-        btn.Font = Enum.Font.SourceSans
-        btn.TextSize = 16
-
-        btn.MouseButton1Click:Connect(function()
-            for _, b in pairs(dropdown:GetChildren()) do
-                if b:IsA("TextButton") then
-                    b.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-                end
-            end
-            btn.BackgroundColor3 = Color3.fromRGB(90, 140, 90)
-            selectedRemote = remote
-            print("[SELECTED]:", remote:GetFullName())
-        end)
-    end
-
-    dropdown.CanvasSize = UDim2.new(0, 0, 0, #remotes * 30)
 end
 
-scanRemotes()
+for _, remote in ipairs(remotes) do
+    local btn = Instance.new("TextButton", dropdown)
+    btn.Size = UDim2.new(1, -10, 0, 25)
+    btn.Text = remote:GetFullName()
+    btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    btn.TextColor3 = Color3.new(1, 1, 1)
+    btn.TextSize = 14
 
--- Fire logic
+    btn.MouseButton1Click:Connect(function()
+        selectedRemote = remote
+        for _, b in pairs(dropdown:GetChildren()) do
+            if b:IsA("TextButton") then
+                b.BackgroundColor3 = Color3.fromRGB(60,60,60)
+            end
+        end
+        btn.BackgroundColor3 = Color3.fromRGB(90,140,90)
+    end)
+end
+
+dropdown.CanvasSize = UDim2.new(0, 0, 0, #remotes * 26)
+
+-- === Fire Button Logic ===
 fireBtn.MouseButton1Click:Connect(function()
     if not selectedRemote then
-        warn("No remote selected")
+        previewLabel.Text = "⚠️ No remote selected!"
         return
     end
     if promptBox.Text == "" then
-        warn("Prompt is empty")
+        previewLabel.Text = "⚠️ Enter a prompt first!"
         return
     end
 
-    local request = {
+    -- API Request
+    local body = HttpService:JSONEncode({
         model = "gpt-3.5-turbo",
         messages = {
-            {
-                role = "system",
-                content = "You are an expert Roblox scripter. When given a prompt about firing a Roblox remote with arguments, respond ONLY with a valid Lua table of the arguments to use, no explanations."
-            },
-            {
-                role = "user",
-                content = promptBox.Text
-            }
+            { role = "system", content = "ONLY respond with a valid Lua table like {speed = 999}, and nothing else." },
+            { role = "user", content = promptBox.Text }
         },
-        temperature = 0.2,
+        temperature = 0.1,
         max_tokens = 300
-    }
+    })
 
-    local body = HttpService:JSONEncode(request)
     local headers = {
         ["Content-Type"] = "application/json",
-        ["Authorization"] = "Bearer " .. openAIKey
+        ["Authorization"] = "Bearer "..openAIKey
     }
 
     local success, response = pcall(function()
@@ -198,37 +183,39 @@ fireBtn.MouseButton1Click:Connect(function()
     end)
 
     if not success then
-        warn("OpenAI failed:", response)
+        previewLabel.Text = "❌ OpenAI error: "..tostring(response)
         return
     end
 
-    local json = HttpService:JSONDecode(response)
-    local rawLua = json.choices[1].message.content
-    print("[OPENAI RAW]:", rawLua)
+    local parsed = HttpService:JSONDecode(response)
+    local rawLua = parsed.choices[1].message.content
+    local code = rawLua:match("{.*}") or rawLua
 
-    local fn, err = loadstring("return " .. rawLua)
+    previewLabel.Text = "🧠 AI Args:\n"..code
+
+    local fn, err = loadstring("return "..code)
     if not fn then
-        warn("Failed to parse AI output:", err)
+        previewLabel.Text = "❌ Lua parse error:\n"..err
         return
     end
 
     local ok, args = pcall(fn)
     if not ok then
-        warn("Failed to convert args:", args)
+        previewLabel.Text = "❌ Lua exec error:\n"..tostring(args)
         return
     end
 
-    local fireOk, fireErr = pcall(function()
+    local fireSuccess, fireErr = pcall(function()
         if selectedRemote:IsA("RemoteEvent") then
             selectedRemote:FireServer(table.unpack(args))
-        elseif selectedRemote:IsA("RemoteFunction") then
+        else
             selectedRemote:InvokeServer(table.unpack(args))
         end
     end)
 
-    if not fireOk then
-        warn("Remote fire failed:", fireErr)
+    if fireSuccess then
+        previewLabel.Text = "✅ Fired "..selectedRemote.Name.." with args:\n"..code
     else
-        print("🔥 Fired remote with AI-generated args!")
+        previewLabel.Text = "❌ Remote fire error:\n"..tostring(fireErr)
     end
 end)
